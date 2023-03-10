@@ -9,7 +9,7 @@ import numpy as np
 
 
 class ReplayBuffer(object):
-    def __init__(self, capacity, trajectories=[]):
+    def __init__(self, capacity, trajectories:list=[]):
         self.capacity = capacity
         if len(trajectories) <= self.capacity:
             self.trajectories = trajectories

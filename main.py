@@ -25,6 +25,7 @@ from decision_transformer.models.decision_transformer import DecisionTransformer
 from evaluation import create_vec_eval_episodes_fn, vec_evaluate_episode_rtg
 from trainer import SequenceTrainer
 from logger import Logger
+import wandb
 
 MAX_EPISODE_LEN = 1000
 
@@ -469,6 +470,7 @@ if __name__ == "__main__":
     parser.add_argument("--env", type=str, default="hopper-medium-v2")
 
     # model options
+    # transformer options
     parser.add_argument("--K", type=int, default=20)
     parser.add_argument("--embed_dim", type=int, default=512)
     parser.add_argument("--n_layer", type=int, default=4)
@@ -512,6 +514,12 @@ if __name__ == "__main__":
 
     utils.set_seed_everywhere(args.seed)
     experiment = Experiment(vars(args))
-
     print("=" * 50)
+    # init wandb
+    wandb.init(
+        project="dt",
+        config=vars(args),
+        name="online-dt-hopper-medium-v2",
+        reinit=True,
+    )
     experiment()

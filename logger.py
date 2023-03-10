@@ -8,7 +8,7 @@ LICENSE.md file in the root directory of this source tree.
 from datetime import datetime
 import os
 import utils
-
+import wandb
 
 class Logger:
     def __init__(self, variant):
@@ -24,12 +24,19 @@ class Logger:
             print(f"{k}: {v}")
             if writer:
                 writer.add_scalar(k, v, iter_num)
+                wandb.log({k: v}, step=iter_num)
+
                 if k == "evaluation/return_mean_gm":
                     writer.add_scalar(
                         "evaluation/return_vs_samples",
                         v,
                         total_transitions_sampled,
                     )
+                    wandb.log(
+                        {"evaluation/return_vs_samples": v},
+                        step=total_transitions_sampled,
+                    )
+                    
 
     def create_log_path(self, variant):
         now = datetime.now().strftime("%Y.%m.%d/%H%M%S")
