@@ -1,0 +1,3 @@
+[submodule "docker-manager"]
+	path = docker-manager
+	url = https://github.com/jesn1219/docker-manager

@@ -2,7 +2,6 @@
 .DS_Store
 *.swp
 *.pkl
-docker-manager
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
