@@ -34,8 +34,9 @@ class Logger:
                     )
                     wandb.log(
                         {"evaluation/return_vs_samples": v},
-                        step=total_transitions_sampled,
+                        step=int(total_transitions_sampled),
                     )
+                
                     
 
     def create_log_path(self, variant):

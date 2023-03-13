@@ -49,6 +49,7 @@ class SequenceTrainer:
         logs["training/nll"] = nlls[-1]
         logs["training/entropy"] = entropies[-1]
         logs["training/temp_value"] = self.model.temperature().detach().cpu().item()
+        
 
         return logs
 

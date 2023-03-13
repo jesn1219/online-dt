@@ -6,6 +6,10 @@ LICENSE.md file in the root directory of this source tree.
 """
 
 from torch.utils.tensorboard import SummaryWriter
+import os 
+# Set system environment variables
+os.environ["D4RL_SUPPRESS_IMPORT_ERROR"] = "1"
+os.environ["DISPLAY"]=":11.0"
 import argparse
 import pickle
 import random
@@ -26,6 +30,7 @@ from evaluation import create_vec_eval_episodes_fn, vec_evaluate_episode_rtg
 from trainer import SequenceTrainer
 from logger import Logger
 import wandb
+
 
 MAX_EPISODE_LEN = 1000
 
@@ -263,7 +268,7 @@ class Experiment:
                 reward_scale=self.reward_scale,
                 action_range=self.action_range,
             )
-
+            # jesnk : maybe, data were loaded up to max_updates_per_pretrain_iter
             train_outputs = trainer.train_iteration(
                 loss_fn=loss_fn,
                 dataloader=dataloader,
@@ -518,6 +523,7 @@ if __name__ == "__main__":
     # init wandb
     wandb.init(
         project="dt",
+        entity="jesnk",
         config=vars(args),
         name="online-dt-hopper-medium-v2",
         reinit=True,
