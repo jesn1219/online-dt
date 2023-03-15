@@ -26,6 +26,37 @@ class SequenceTrainer:
         self.device = device
         self.start_time = time.time()
 
+# jesnk : made
+    def pretrain_train_iteration(
+        self,
+        loss_fn,
+        dataloader,
+    ):
+
+        losses, nlls, entropies = [], [], []
+        logs = dict()
+        train_start = time.time()
+
+        self.model.train()
+        for _, trajs in enumerate(dataloader):
+            loss, nll, entropy = self.train_step_stochastic(loss_fn, trajs)
+            losses.append(loss)
+            nlls.append(nll)
+            entropies.append(entropy)
+            
+
+        logs["pretrain/time/training"] = time.time() - train_start
+        logs["pretrain/training/train_loss_mean"] = np.mean(losses)
+        logs["pretrain/training/train_loss_std"] = np.std(losses)
+        logs["pretrain/training/nll"] = nlls[-1]
+        logs["pretrain/training/entropy"] = entropies[-1]
+        logs["pretrain/training/temp_value"] = self.model.temperature().detach().cpu().item()
+        
+
+        return logs
+
+
+
     def train_iteration(
         self,
         loss_fn,

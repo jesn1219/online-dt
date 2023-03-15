@@ -269,7 +269,7 @@ class Experiment:
                 action_range=self.action_range,
             )
             # jesnk : maybe, data were loaded up to max_updates_per_pretrain_iter
-            train_outputs = trainer.train_iteration(
+            train_outputs = trainer.pretrain_train_iteration(
                 loss_fn=loss_fn,
                 dataloader=dataloader,
             )
