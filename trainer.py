@@ -8,6 +8,7 @@ LICENSE.md file in the root directory of this source tree.
 import numpy as np
 import torch
 import time
+import wandb
 
 
 class SequenceTrainer:
@@ -31,6 +32,7 @@ class SequenceTrainer:
         self,
         loss_fn,
         dataloader,
+        jesnk_logger = None,
     ):
 
         losses, nlls, entropies = [], [], []
@@ -38,11 +40,21 @@ class SequenceTrainer:
         train_start = time.time()
 
         self.model.train()
+        if jesnk_logger is not None:
+            jesnk_logger.info(f"pretrain_train_iteration, dataloader length : {len(dataloader)}")
+
         for _, trajs in enumerate(dataloader):
             loss, nll, entropy = self.train_step_stochastic(loss_fn, trajs)
             losses.append(loss)
             nlls.append(nll)
             entropies.append(entropy)
+            # jesnk : assume that one loop is one episode
+            wandb.log({"pretrain/training/loss": loss, \
+                       "pretrain/training/nll": nll, \
+                        "pretrain/training/entropies": entropy, \
+                            "pretrain/training/episode" : _, \
+                                "pretrain/training/temperatures" : self.model.temperature().detach().cpu().item()})
+
             
 
         logs["pretrain/time/training"] = time.time() - train_start
@@ -51,36 +63,57 @@ class SequenceTrainer:
         logs["pretrain/training/nll"] = nlls[-1]
         logs["pretrain/training/entropy"] = entropies[-1]
         logs["pretrain/training/temp_value"] = self.model.temperature().detach().cpu().item()
+        logs["pretrain/training/last_episode"] = _ 
+
+        if jesnk_logger is not None:
+            jesnk_logger.info(f"pretrain_train_iteration is done")
         
 
         return logs
 
 
 
-    def train_iteration(
+    def ot_train_iteration(
         self,
         loss_fn,
         dataloader,
+        jesnk_logger = None,
+        start_episode_num = None,
     ):
+        
+
+        logging_prefix = "ot/training"
+
 
         losses, nlls, entropies = [], [], []
         logs = dict()
         train_start = time.time()
 
         self.model.train()
+        if jesnk_logger is not None:
+            jesnk_logger.info(f"ot_train_iteration, dataloader length : {len(dataloader)}")
+
         for _, trajs in enumerate(dataloader):
             loss, nll, entropy = self.train_step_stochastic(loss_fn, trajs)
             losses.append(loss)
             nlls.append(nll)
             entropies.append(entropy)
+            wandb.log({logging_prefix + "loss": loss, \
+                       logging_prefix + "nll": nll, \
+                        logging_prefix + "entropies": entropy, \
+                            logging_prefix + "episode" : start_episode_num + _, \
+                                logging_prefix + "temperature" : self.model.temperature().detach().cpu().item()}
+            )
 
-        logs["time/training"] = time.time() - train_start
-        logs["training/train_loss_mean"] = np.mean(losses)
-        logs["training/train_loss_std"] = np.std(losses)
-        logs["training/nll"] = nlls[-1]
-        logs["training/entropy"] = entropies[-1]
-        logs["training/temp_value"] = self.model.temperature().detach().cpu().item()
+        logs["ot/time/training"] = time.time() - train_start
+        logs["ot/training/train_loss_mean"] = np.mean(losses)
+        logs["ot/training/train_loss_std"] = np.std(losses)
+        logs["ot/training/nll"] = nlls[-1]
+        logs["ot/training/entropy"] = entropies[-1]
+        logs["ot/training/temp_value"] = self.model.temperature().detach().cpu().item()
         
+        if jesnk_logger is not None:
+            jesnk_logger.info(f"ot_train_iteration is done")
 
         return logs
 

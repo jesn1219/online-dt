@@ -30,6 +30,30 @@ from evaluation import create_vec_eval_episodes_fn, vec_evaluate_episode_rtg
 from trainer import SequenceTrainer
 from logger import Logger
 import wandb
+import logging
+
+#jesnk
+# set up logger, file mode "a" means append, 
+
+def init_jesnk_logger():
+    global jesnk_logger
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+    logging.basicConfig(level=logging.DEBUG, format=formatter)
+    jesnk_logger = logging.getLogger(__name__)
+
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    ch.setFormatter(formatter)
+    jesnk_logger.addHandler(ch)
+    jesnk_logger.setLevel(logging.DEBUG)
+
+    file_handler = logging.FileHandler('jesnk.log', delay=True)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+    jesnk_logger.addHandler(file_handler)
+
+    jesnk_logger.info("Starting logger")
 
 
 MAX_EPISODE_LEN = 1000
@@ -254,7 +278,9 @@ class Experiment:
         writer = (
             SummaryWriter(self.logger.log_path) if self.variant["log_to_tb"] else None
         )
+        jesnk_logger.info(f"Start pretraining, max_pretrain_iters : {self.variant['max_pretrain_iters']}")
         while self.pretrain_iter < self.variant["max_pretrain_iters"]:
+            jesnk_logger.info(f"pretrain_iter : {self.pretrain_iter}")
             # in every iteration, prepare the data loader
             dataloader = create_dataloader(
                 trajectories=self.offline_trajs,
@@ -268,6 +294,8 @@ class Experiment:
                 reward_scale=self.reward_scale,
                 action_range=self.action_range,
             )
+            # len(dataloader)
+            jesnk_logger.info(f"len(dataloader) : {len(dataloader)}")
             # jesnk : maybe, data were loaded up to max_updates_per_pretrain_iter
             train_outputs = trainer.pretrain_train_iteration(
                 loss_fn=loss_fn,
@@ -290,6 +318,7 @@ class Experiment:
             )
 
             self.pretrain_iter += 1
+        jesnk_logger.info(f"End pretraining, max_pretrain_iters : {self.variant['max_pretrain_iters']}")
 
     def evaluate(self, eval_fns):
         eval_start = time.time()
@@ -330,7 +359,13 @@ class Experiment:
         writer = (
             SummaryWriter(self.logger.log_path) if self.variant["log_to_tb"] else None
         )
+        jesnk_logger.info(f"Start online tuning, max_online_iters : {self.variant['max_online_iters']}")
+        jesnk_logger.info(f"num_updates_per_online_iter : {self.variant['num_updates_per_online_iter']}")
+        jesnk_logger.info(f"num_online_rollouts : {self.variant['num_online_rollouts']}")
+
+        start_episode_num = 0 # jesnk
         while self.online_iter < self.variant["max_online_iters"]:
+            jesnk_logger.info(f"online_iter : {self.online_iter}")
 
             outputs = {}
             augment_outputs = self._augment_trajectories(
@@ -352,7 +387,7 @@ class Experiment:
                 reward_scale=self.reward_scale,
                 action_range=self.action_range,
             )
-
+            
             # finetuning
             is_last_iter = self.online_iter == self.variant["max_online_iters"] - 1
             if (self.online_iter + 1) % self.variant[
@@ -361,11 +396,14 @@ class Experiment:
                 evaluation = True
             else:
                 evaluation = False
-
-            train_outputs = trainer.train_iteration(
+            jesnk_logger.info(f"online tuning, start_episode_num : {start_episode_num}")
+            train_outputs = trainer.ot_train_iteration(
                 loss_fn=loss_fn,
                 dataloader=dataloader,
+                start_episode_num=start_episode_num+1, # jesnk
             )
+            start_episode_num += self.variant["num_updates_per_online_iter"] # jesnk
+
             outputs.update(train_outputs)
 
             if evaluation:
@@ -470,6 +508,9 @@ class Experiment:
 
 
 if __name__ == "__main__":
+
+    init_jesnk_logger()
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=10)
     parser.add_argument("--env", type=str, default="hopper-medium-v2")
@@ -516,6 +557,11 @@ if __name__ == "__main__":
     parser.add_argument("--exp_name", type=str, default="default")
 
     args = parser.parse_args()
+
+
+    jesnk_logger.info("Starting experiment")
+    jesnk_logger.info(f"args: {args}")
+
 
     utils.set_seed_everywhere(args.seed)
     experiment = Experiment(vars(args))
