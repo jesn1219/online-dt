@@ -566,12 +566,15 @@ if __name__ == "__main__":
     utils.set_seed_everywhere(args.seed)
     experiment = Experiment(vars(args))
     print("=" * 50)
-    # init wandb
+
+
+    wandb_name = "{}-{}-{}".format(args.env, args.exp_name, time.time())
+
     wandb.init(
-        project="dt",
+        project="online-dt",
         entity="jesnk",
         config=vars(args),
-        name="online-dt-hopper-medium-v2",
+        name=wandb_name,
         reinit=True,
     )
     experiment()

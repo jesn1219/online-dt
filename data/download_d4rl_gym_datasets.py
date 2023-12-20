@@ -14,8 +14,12 @@ import d4rl
 
 datasets = []
 
-for env_name in ["halfcheetah", "hopper", "walker2d", "ant"]:
-    for dataset_type in ["medium", "medium-expert", "medium-replay", "expert"]:
+for env_name in [ "hopper", "halfcheetah","walker2d", "ant"]:
+    for dataset_type in ["medium","medium-replay", "expert"]:
+    #for dataset_type in ["medium", "medium-expert", "medium-replay", "expert"]:
+    
+        print(env_name, dataset_type)
+        
         name = f"{env_name}-{dataset_type}-v2"
         env = gym.make(name)
         dataset = env.get_dataset()
