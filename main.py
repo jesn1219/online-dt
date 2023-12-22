@@ -80,7 +80,7 @@ class Experiment:
             self.offline_trajs, self.state_mean, self.state_std = self._load_dataset_01(
                 variant["env"]
             )
-            self.state_range = [0, 5.0]
+            self.state_range = [0, 10.0]
             self.replay_buffer = ReplayBuffer01(variant["replay_size"], self.offline_trajs)
 
 
@@ -662,7 +662,7 @@ if __name__ == "__main__":
     parser.add_argument("--exp_name", type=str, default="default")
     
     # add wandb tags
-    parser.add_argument("--tags", type=str, default="")
+    parser.add_argument("--tags", type=str, default="model:01")
 
     args = parser.parse_args()
 

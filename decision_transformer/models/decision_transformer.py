@@ -53,6 +53,32 @@ class TanhTransform(pyd.transforms.Transform):
         # https://github.com/tensorflow/probability/commit/ef6bb176e0ebd1cf6e25c6b5cecdd2428c22963f#diff-e120f70e92e6741bca649f04fcd907b7
         return 2.0 * (math.log(2.0) - x - F.softplus(-2.0 * x))
 
+class LinearTransform(pyd.transforms.Transform):
+    bijective = True
+    sign = +1
+
+    def __init__(self, value_range=(0.0, 5.0), cache_size=1):
+        super().__init__(cache_size=cache_size)
+        self.min_val, self.max_val = value_range
+        self.scale = 2 / (self.max_val - self.min_val)
+        self.offset = -1 - self.min_val * self.scale
+        self.domain = pyd.constraints.interval(self.min_val, self.max_val)
+        self.codomain = pyd.constraints.interval(-1.0, 1.0)
+        
+        
+    def _call(self, x):
+        # Scale and offset x to map from [min_val, max_val] to [-1, 1]
+        return self.scale * x + self.offset
+
+    def _inverse(self, y):
+        # Inverse transform from [-1, 1] to [min_val, max_val]
+        return (y - self.offset) / self.scale
+
+    def log_abs_det_jacobian(self, x, y):
+        # The Jacobian is constant as the transformation is linear
+        return math.log(abs(self.scale))
+
+
 
 class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
     """
@@ -63,12 +89,16 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
     independent squashed univariate normal distributions.
     """
 
-    def __init__(self, loc, std):
+    def __init__(self, loc, std, transform_type = 'tanh', value_range = [-1.0, 1.0]):
         self.loc = loc
         self.std = std
         self.base_dist = pyd.Normal(loc, std)
 
-        transforms = [TanhTransform()]
+        if transform_type == 'tanh':
+            transforms = [TanhTransform()]
+        elif transform_type == 'linear':
+            print("linear transform")
+            transforms = [LinearTransform(value_range=value_range)]
         super().__init__(self.base_dist, transforms)
 
     @property
@@ -91,19 +121,23 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
         # log_prob(x): (batch_size, context_len, action_dim)
         # sum up along the action dimensions
         # Return tensor shape: (batch_size, context_len)
+        print(x.shape)
+        print(x)
+        print(self.log_prob(x))
         return self.log_prob(x).sum(axis=2)
 
 
 class DiagGaussianActor(nn.Module):
     """torch.distributions implementation of an diagonal Gaussian policy."""
 
-    def __init__(self, hidden_dim, act_dim, log_std_bounds=[-5.0, 2.0]):
+    def __init__(self, hidden_dim, act_dim, log_std_bounds=[-5.0, 2.0], transform_type = 'tanh', value_range = [-1.0, 1.0]):
         super().__init__()
 
         self.mu = torch.nn.Linear(hidden_dim, act_dim)
         self.log_std = torch.nn.Linear(hidden_dim, act_dim)
         self.log_std_bounds = log_std_bounds
-
+        self.transform_type = transform_type
+        self.value_range = value_range
         def weight_init(m):
             """Custom weight init for Conv2D and Linear layers."""
             if isinstance(m, torch.nn.Linear):
@@ -121,7 +155,7 @@ class DiagGaussianActor(nn.Module):
         log_std_min, log_std_max = self.log_std_bounds
         log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1.0)
         std = log_std.exp()
-        return SquashedNormal(mu, std)
+        return SquashedNormal(mu, std, self.transform_type, value_range = self.value_range)
 
 
 from decision_transformer.models.model import TrajectoryModel01
@@ -172,7 +206,7 @@ class DecisionTransformer01(TrajectoryModel01):
         self.embed_ln = nn.LayerNorm(hidden_size)
 
         if stochastic_policy:
-            self.predict_state = DiagGaussianActor(hidden_size, self.state_dim)
+            self.predict_state = DiagGaussianActor(hidden_size, self.state_dim, transform_type='linear', value_range=state_range)
         else:
             self.predict_state = nn.Sequential(
                 *(

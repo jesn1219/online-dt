@@ -206,7 +206,7 @@ class SequenceTrainer:
 
         state_target = torch.clone(states)
 
-        states_pred = self.model.forward(
+        states_preds = self.model.forward(
             states,
             timesteps,
             ordering,
@@ -214,7 +214,7 @@ class SequenceTrainer:
         )
 
         loss, nll, entropy = loss_fn(
-            states_pred,  # a_hat_dist
+            states_preds,  # a_hat_dist
             state_target,
             padding_mask,
             self.model.temperature().detach(),  # no gradient taken here
