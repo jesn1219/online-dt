@@ -20,19 +20,19 @@ import torch
 import numpy as np
 
 import utils
-from replay_buffer import ReplayBuffer
+from replay_buffer import ReplayBuffer, ReplayBuffer01
 from lamb import Lamb
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from pathlib import Path
-from data import create_dataloader
-from decision_transformer.models.decision_transformer import DecisionTransformer
+from data import create_dataloader, create_dataloader_01
+from decision_transformer.models.decision_transformer import DecisionTransformer, DecisionTransformer01
 from evaluation import create_vec_eval_episodes_fn, vec_evaluate_episode_rtg
 from trainer import SequenceTrainer
 from logger import Logger
 import wandb
 import logging
 from jesnk_utils.utils import get_current_time
-#jesnk
+# jesnk
 # set up logger, file mode "a" means append, 
 
 def init_jesnk_logger():
@@ -61,38 +61,78 @@ MAX_EPISODE_LEN = 1000
 
 class Experiment:
     def __init__(self, variant):
+        init_jesnk_logger()
+        
+        jesnk_logger.info("Starting experiment")
+        jesnk_logger.info(f"args: {variant}")
+
 
         self.state_dim, self.act_dim, self.action_range = self._get_env_spec(variant)
-        self.offline_trajs, self.state_mean, self.state_std = self._load_dataset(
-            variant["env"]
-        )
-        # initialize by offline trajs
-        self.replay_buffer = ReplayBuffer(variant["replay_size"], self.offline_trajs)
+        self.variant = variant
+        # initialize by offline trajs        
+        if not ("model:01" in variant["tags"]) :
+            self.offline_trajs, self.state_mean, self.state_std = self._load_dataset(
+                variant["env"]
+            )
+            self.replay_buffer = ReplayBuffer(variant["replay_size"], self.offline_trajs)
+
+        else :            
+            self.offline_trajs, self.state_mean, self.state_std = self._load_dataset_01(
+                variant["env"]
+            )
+            self.state_range = [0, 5.0]
+            self.replay_buffer = ReplayBuffer01(variant["replay_size"], self.offline_trajs)
+
 
         self.aug_trajs = []
 
         self.device = variant.get("device", "cuda")
         self.target_entropy = -self.act_dim
-        self.model = DecisionTransformer(
-            state_dim=self.state_dim,
-            act_dim=self.act_dim,
-            action_range=self.action_range,
-            max_length=variant["K"],
-            eval_context_length=variant["eval_context_length"],
-            max_ep_len=MAX_EPISODE_LEN,
-            hidden_size=variant["embed_dim"],
-            n_layer=variant["n_layer"],
-            n_head=variant["n_head"],
-            n_inner=4 * variant["embed_dim"],
-            activation_function=variant["activation_function"],
-            n_positions=1024,
-            resid_pdrop=variant["dropout"],
-            attn_pdrop=variant["dropout"],
-            stochastic_policy=True,
-            ordering=variant["ordering"],
-            init_temperature=variant["init_temperature"],
-            target_entropy=self.target_entropy,
-        ).to(device=self.device)
+        
+        
+        if not ("model:01" in variant["tags"]) :
+            
+            self.model = DecisionTransformer(
+                state_dim=self.state_dim,
+                act_dim=self.act_dim,
+                action_range=self.action_range,
+                max_length=variant["K"],
+                eval_context_length=variant["eval_context_length"],
+                max_ep_len=MAX_EPISODE_LEN,
+                hidden_size=variant["embed_dim"],
+                n_layer=variant["n_layer"],
+                n_head=variant["n_head"],
+                n_inner=4 * variant["embed_dim"],
+                activation_function=variant["activation_function"],
+                n_positions=1024,
+                resid_pdrop=variant["dropout"],
+                attn_pdrop=variant["dropout"],
+                stochastic_policy=True,
+                ordering=variant["ordering"],
+                init_temperature=variant["init_temperature"],
+                target_entropy=self.target_entropy,
+            ).to(device=self.device)
+        else :
+            self.model = DecisionTransformer01(
+                state_dim=self.state_dim,
+                state_range= self.state_range,
+                max_length=variant["K"],
+                eval_context_length=variant["eval_context_length"],
+                max_ep_len=MAX_EPISODE_LEN,
+                hidden_size=variant["embed_dim"],
+                n_layer=variant["n_layer"],
+                n_head=variant["n_head"],
+                n_inner=4 * variant["embed_dim"],
+                activation_function=variant["activation_function"],
+                n_positions=1024,
+                resid_pdrop=variant["dropout"],
+                attn_pdrop=variant["dropout"],
+                stochastic_policy=True,
+                ordering=variant["ordering"],
+                init_temperature=variant["init_temperature"],
+                target_entropy=self.target_entropy,
+            ).to(device=self.device)
+                
 
         self.optimizer = Lamb(
             self.model.parameters(),
@@ -115,7 +155,7 @@ class Experiment:
         self.pretrain_iter = 0
         self.online_iter = 0
         self.total_transitions_sampled = 0
-        self.variant = variant
+        #self.variant = variant #jesnk: move to upper
         self.reward_scale = 1.0 if "antmaze" in variant["env"] else 0.001
         self.logger = Logger(variant)
 
@@ -211,6 +251,28 @@ class Experiment:
         trajectories = [trajectories[ii] for ii in sorted_inds]
 
         return trajectories, state_mean, state_std
+    
+    def _load_dataset_01(self,env_name) :
+        offline_trajs, state_mean, state_std = self._load_dataset(env_name)
+        # create ['K'] length trajectories with initial state and final state
+        offline_trajs_01 = []
+        for traj in offline_trajs:
+            traj_len = len(traj["observations"])
+            # divide the trajectory into K length. get index of K length
+            if traj_len < self.variant["K"] :
+                continue 
+            index = np.linspace(0, traj_len - 1, self.variant["K"]).astype(int)
+            #print(f"traj len: {traj_len}, index : {index}")
+            # get the state and action of the index
+            # get the initial action and final action
+            for key in traj.keys() :
+                traj[key] = traj[key][index]
+            offline_trajs_01.append(traj)
+        return offline_trajs_01, state_mean, state_std
+            
+            
+            
+            
 
     def _augment_trajectories(
         self,
@@ -282,18 +344,32 @@ class Experiment:
         while self.pretrain_iter < self.variant["max_pretrain_iters"]:
             jesnk_logger.info(f"pretrain_iter : {self.pretrain_iter}")
             # in every iteration, prepare the data loader
-            dataloader = create_dataloader(
-                trajectories=self.offline_trajs,
-                num_iters=self.variant["num_updates_per_pretrain_iter"],
-                batch_size=self.variant["batch_size"],
-                max_len=self.variant["K"],
-                state_dim=self.state_dim,
-                act_dim=self.act_dim,
-                state_mean=self.state_mean,
-                state_std=self.state_std,
-                reward_scale=self.reward_scale,
-                action_range=self.action_range,
-            )
+            if not ("model:01" in self.variant["tags"]) :
+                dataloader = create_dataloader(
+                    trajectories=self.offline_trajs,
+                    num_iters=self.variant["num_updates_per_pretrain_iter"],
+                    batch_size=self.variant["batch_size"],
+                    max_len=self.variant["K"],
+                    state_dim=self.state_dim,
+                    act_dim=self.act_dim,
+                    state_mean=self.state_mean,
+                    state_std=self.state_std,
+                    reward_scale=self.reward_scale,
+                    action_range=self.action_range,
+                )
+            else :
+                dataloader = create_dataloader_01(
+                    trajectories=self.offline_trajs,
+                    num_iters=self.variant["num_updates_per_pretrain_iter"],
+                    batch_size=self.variant["batch_size"],
+                    max_len=self.variant["K"],
+                    state_dim=self.state_dim,
+                    state_mean=self.state_mean,
+                    state_std=self.state_std,
+                    reward_scale=self.reward_scale,
+                    state_range= self.state_range
+                )
+            
             # len(dataloader)
             jesnk_logger.info(f"len(dataloader) : {len(dataloader)}")
             # jesnk : maybe, data were loaded up to max_updates_per_pretrain_iter
@@ -374,20 +450,32 @@ class Experiment:
                 n=self.variant["num_online_rollouts"],
             )
             outputs.update(augment_outputs)
-
-            dataloader = create_dataloader(
-                trajectories=self.replay_buffer.trajectories,
-                num_iters=self.variant["num_updates_per_online_iter"],
-                batch_size=self.variant["batch_size"],
-                max_len=self.variant["K"],
-                state_dim=self.state_dim,
-                act_dim=self.act_dim,
-                state_mean=self.state_mean,
-                state_std=self.state_std,
-                reward_scale=self.reward_scale,
-                action_range=self.action_range,
-            )
-            
+            if not ("model:01" in self.variant["tags"]) :
+                dataloader = create_dataloader(
+                    trajectories=self.replay_buffer.trajectories,
+                    num_iters=self.variant["num_updates_per_online_iter"],
+                    batch_size=self.variant["batch_size"],
+                    max_len=self.variant["K"],
+                    state_dim=self.state_dim,
+                    act_dim=self.act_dim,
+                    state_mean=self.state_mean,
+                    state_std=self.state_std,
+                    reward_scale=self.reward_scale,
+                    action_range=self.action_range,
+                )
+            else :
+                dataloader = create_dataloader_01(
+                    trajectories=self.offline_trajs,
+                    num_iters=self.variant["num_updates_per_pretrain_iter"],
+                    batch_size=self.variant["batch_size"],
+                    max_len=self.variant["K"],
+                    state_dim=self.state_dim,
+                    state_mean=self.state_mean,
+                    state_std=self.state_std,
+                    reward_scale=self.reward_scale,
+                    state_range= self.state_range
+                )
+                
             # finetuning
             is_last_iter = self.online_iter == self.variant["max_online_iters"] - 1
             if (self.online_iter + 1) % self.variant[
@@ -429,27 +517,46 @@ class Experiment:
 
     def __call__(self):
 
-        utils.set_seed_everywhere(args.seed)
+        utils.set_seed_everywhere(self.variant['seed'])
 
         import d4rl
+        if not ("model:01" in self.variant["tags"]) :
+            def loss_fn(
+                a_hat_dist,
+                a,
+                attention_mask,
+                entropy_reg,
+            ):
+                # a_hat is a SquashedNormal Distribution
+                log_likelihood = a_hat_dist.log_likelihood(a)[attention_mask > 0].mean()
 
-        def loss_fn(
-            a_hat_dist,
-            a,
-            attention_mask,
-            entropy_reg,
-        ):
-            # a_hat is a SquashedNormal Distribution
-            log_likelihood = a_hat_dist.log_likelihood(a)[attention_mask > 0].mean()
+                entropy = a_hat_dist.entropy().mean()
+                loss = -(log_likelihood + entropy_reg * entropy)
 
-            entropy = a_hat_dist.entropy().mean()
-            loss = -(log_likelihood + entropy_reg * entropy)
+                return (
+                    loss,
+                    -log_likelihood,
+                    entropy,
+                )
+        else :
+            def loss_fn(
+                s_hat_dist,
+                s,
+                attention_mask,
+                entropy_reg,
+            ):
+                # a_hat is a SquashedNormal Distribution
+                log_likelihood = s_hat_dist.log_likelihood(s)[attention_mask > 0].mean()
 
-            return (
-                loss,
-                -log_likelihood,
-                entropy,
-            )
+                entropy = s_hat_dist.entropy().mean()
+                loss = -(log_likelihood + entropy_reg * entropy)
+
+                return (
+                    loss,
+                    -log_likelihood,
+                    entropy,
+                )
+            
 
         def get_env_builder(seed, env_name, target_goal=None):
             def make_env_fn():
@@ -509,8 +616,6 @@ class Experiment:
 
 if __name__ == "__main__":
 
-    init_jesnk_logger()
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=10)
     parser.add_argument("--env", type=str, default="hopper-medium-v2")
@@ -562,8 +667,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
 
-    jesnk_logger.info("Starting experiment")
-    jesnk_logger.info(f"args: {args}")
 
 
     utils.set_seed_everywhere(args.seed)

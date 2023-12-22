@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import time
 import wandb
+from decision_transformer.models.decision_transformer import DecisionTransformer, DecisionTransformer01
 
 
 class SequenceTrainer:
@@ -44,7 +45,10 @@ class SequenceTrainer:
             jesnk_logger.info(f"pretrain_train_iteration, dataloader length : {len(dataloader)}")
 
         for _, trajs in enumerate(dataloader):
-            loss, nll, entropy = self.train_step_stochastic(loss_fn, trajs)
+            if isinstance(self.model, DecisionTransformer):
+                loss, nll, entropy = self.train_step_stochastic(loss_fn, trajs)
+            else :
+                loss, nll, entropy = self.train_step_stochastic_01(loss_fn, trajs)
             losses.append(loss)
             nlls.append(nll)
             entropies.append(entropy)
@@ -94,7 +98,10 @@ class SequenceTrainer:
             jesnk_logger.info(f"ot_train_iteration, dataloader length : {len(dataloader)}")
 
         for _, trajs in enumerate(dataloader):
-            loss, nll, entropy = self.train_step_stochastic(loss_fn, trajs)
+            if isinstance(self.model, DecisionTransformer):
+                loss, nll, entropy = self.train_step_stochastic(loss_fn, trajs)
+            else :
+                loss, nll, entropy = self.train_step_stochastic_01(loss_fn, trajs)
             losses.append(loss)
             nlls.append(nll)
             entropies.append(entropy)
@@ -153,6 +160,62 @@ class SequenceTrainer:
         loss, nll, entropy = loss_fn(
             action_preds,  # a_hat_dist
             action_target,
+            padding_mask,
+            self.model.temperature().detach(),  # no gradient taken here
+        )
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.25)
+        self.optimizer.step()
+
+        self.log_temperature_optimizer.zero_grad()
+        temperature_loss = (
+            self.model.temperature() * (entropy - self.model.target_entropy).detach()
+        )
+        temperature_loss.backward()
+        self.log_temperature_optimizer.step()
+
+        if self.scheduler is not None:
+            self.scheduler.step()
+
+        return (
+            loss.detach().cpu().item(),
+            nll.detach().cpu().item(),
+            entropy.detach().cpu().item(),
+        )
+
+    def train_step_stochastic_01(self, loss_fn, trajs):
+        (
+            states,
+            rewards,
+            dones,
+            rtg,
+            timesteps,
+            ordering,
+            padding_mask,
+        ) = trajs
+        
+
+        states = states.to(self.device)
+        rewards = rewards.to(self.device)
+        dones = dones.to(self.device)
+        rtg = rtg.to(self.device)
+        timesteps = timesteps.to(self.device)
+        ordering = ordering.to(self.device)
+        padding_mask = padding_mask.to(self.device)
+
+        state_target = torch.clone(states)
+
+        states_pred = self.model.forward(
+            states,
+            timesteps,
+            ordering,
+            padding_mask=padding_mask,
+        )
+
+        loss, nll, entropy = loss_fn(
+            states_pred,  # a_hat_dist
+            state_target,
             padding_mask,
             self.model.temperature().detach(),  # no gradient taken here
         )

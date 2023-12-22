@@ -172,7 +172,7 @@ class DecisionTransformer01(TrajectoryModel01):
         self.embed_ln = nn.LayerNorm(hidden_size)
 
         if stochastic_policy:
-            self.predict_state = DiagGaussianActor(hidden_size, self.act_dim)
+            self.predict_state = DiagGaussianActor(hidden_size, self.state_dim)
         else:
             self.predict_state = nn.Sequential(
                 *(
@@ -222,19 +222,21 @@ class DecisionTransformer01(TrajectoryModel01):
 
         # this makes the sequence look like (R_1, s_1, a_1, R_2, s_2, a_2, ...)
         # which works nice in an autoregressive sense since states predict actions
+        # state_embeddings.shape: batch, seq_length, hidden_size
         stacked_inputs = (
-            torch.stack(
-                (state_embeddings), dim=1
-            )
-            .permute(0, 2, 1, 3)
-            .reshape(batch_size, 3 * seq_length, self.hidden_size)
+            #torch.stack((state_embeddings), dim=1)
+            state_embeddings # batch, seq_length, hidden_size
+            #.permute(0, 2, 1, 3) # batch, seq_length, 1, hidden_size
+            .reshape(batch_size, 1 * seq_length, self.hidden_size)
         )
+        # stacked_inputs.shape: batch, 1*seq_length, hidden_size
         stacked_inputs = self.embed_ln(stacked_inputs)
 
         # to make the attention mask fit the stacked inputs, have to stack it as well
         stacked_padding_mask = (
-            torch.stack((padding_mask, padding_mask, padding_mask), dim=1)
-            .permute(0, 2, 1)
+            #torch.stack((padding_mask, padding_mask, padding_mask), dim=1)
+            padding_mask
+            #.permute(0, 2, 1)
             .reshape(batch_size, 1 * seq_length)
         )
 
@@ -248,7 +250,7 @@ class DecisionTransformer01(TrajectoryModel01):
         # reshape x so that the second dimension corresponds to the original
         # returns (0), states (1), or actions (2); i.e. x[:,1,t] is the token for s_t
         x = x.reshape(batch_size, seq_length, 1, self.hidden_size).permute(0, 2, 1, 3)
-
+        # after reshape : batch, 1, seq_length, hidden_size
         # get predictions
         # predict next state given state and action
         state_preds = self.predict_state(x[:, 0]) # jesnk: must check the index of [:, 0] is correct
@@ -457,7 +459,14 @@ class DecisionTransformer(TrajectoryModel):
             .permute(0, 2, 1, 3)
             .reshape(batch_size, 3 * seq_length, self.hidden_size)
         )
+        #print(f"state_embeddings.shape: {state_embeddings.shape}, stacked_inputs.shape: {torch.stack((returns_embeddings, state_embeddings, action_embeddings), dim=1).shape}")
+        # state_embeddings.shape: torch.Size([256, 5, 512]), stacked_inputs.shape: torch.Size([256, 3, 5, 512])
+        # after permute : batch, seq_length, 3, hidden_size
+        # after reshape : batch, 3*seq_length, hidden_size
         stacked_inputs = self.embed_ln(stacked_inputs)
+        # print(f"after embed_ln: {stacked_inputs.shape}")
+        # after embed_ln: torch.Size([batch, 3*seq_length, hidden_size])
+        # sequence is R_1, s_1, a_1, R_2, s_2, a_2, ...
 
         # to make the attention mask fit the stacked inputs, have to stack it as well
         stacked_padding_mask = (
@@ -465,6 +474,8 @@ class DecisionTransformer(TrajectoryModel):
             .permute(0, 2, 1)
             .reshape(batch_size, 3 * seq_length)
         )
+        #print(f"padding_mask.shape: {padding_mask.shape}, stacked_padding_mask.shape: {stacked_padding_mask.shape}")
+        #padding_mask.shape: torch.Size([256, 5]), stacked_padding_mask.shape: torch.Size([256, 15])
 
         # we feed in the input embeddings (not word indices as in NLP) to the model
         transformer_outputs = self.transformer(
@@ -476,7 +487,7 @@ class DecisionTransformer(TrajectoryModel):
         # reshape x so that the second dimension corresponds to the original
         # returns (0), states (1), or actions (2); i.e. x[:,1,t] is the token for s_t
         x = x.reshape(batch_size, seq_length, 3, self.hidden_size).permute(0, 2, 1, 3)
-
+        # after reshape : batch, 3, seq_length, hidden_size
         # get predictions
         # predict next return given state and action
         return_preds = self.predict_return(x[:, 2])
