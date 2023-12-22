@@ -599,7 +599,13 @@ class Experiment:
         self.start_time = time.time()
         if self.variant["max_pretrain_iters"]:
             self.pretrain(eval_envs, loss_fn)
-
+        # save model
+        self._save_model(
+            path_prefix=self.logger.log_path,
+            is_pretrain_model=True,
+        )
+        
+        
         if self.variant["max_online_iters"]:
             print("\n\nMaking Online Env.....")
             online_envs = SubprocVecEnv(
