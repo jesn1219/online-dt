@@ -578,6 +578,6 @@ if __name__ == "__main__":
         config=vars(args),
         name=wandb_name,
         reinit=True,
-        tags=args.tags,
+        tags=args.tags.split(","),
     )
     experiment()
