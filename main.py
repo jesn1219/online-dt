@@ -31,7 +31,7 @@ from trainer import SequenceTrainer
 from logger import Logger
 import wandb
 import logging
-
+from jesnk_utils.utils import get_current_time
 #jesnk
 # set up logger, file mode "a" means append, 
 
@@ -567,8 +567,7 @@ if __name__ == "__main__":
     experiment = Experiment(vars(args))
     print("=" * 50)
 
-
-    wandb_name = "{}-{}-{}".format(args.env, args.exp_name, time.time())
+    wandb_name = "{}-{}-{}".format(args.env, args.exp_name, get_current_time())
 
     wandb.init(
         project="online-dt",
