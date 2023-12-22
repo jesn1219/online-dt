@@ -555,6 +555,9 @@ if __name__ == "__main__":
     parser.add_argument("--log_to_tb", "-w", type=bool, default=True)
     parser.add_argument("--save_dir", type=str, default="./exp")
     parser.add_argument("--exp_name", type=str, default="default")
+    
+    # add wandb tags
+    parser.add_argument("--tags", type=str, default="")
 
     args = parser.parse_args()
 
@@ -575,5 +578,6 @@ if __name__ == "__main__":
         config=vars(args),
         name=wandb_name,
         reinit=True,
+        tags=args.tags,
     )
     experiment()
