@@ -274,7 +274,7 @@ class Experiment:
             
             
 
-    def _augment_trajectories(
+    def  _augment_trajectories(
         self,
         online_envs,
         target_explore,
@@ -377,10 +377,12 @@ class Experiment:
                 loss_fn=loss_fn,
                 dataloader=dataloader,
             )
-            eval_outputs, eval_reward = self.evaluate(eval_fns)
             outputs = {"time/total": time.time() - self.start_time}
+            if not ("model:01" in self.variant["tags"]) :
+                eval_outputs, eval_reward = self.evaluate(eval_fns)
+                outputs.update(eval_outputs)
+
             outputs.update(train_outputs)
-            outputs.update(eval_outputs)
             self.logger.log_metrics(
                 outputs,
                 iter_num=self.pretrain_iter,

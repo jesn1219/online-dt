@@ -264,11 +264,11 @@ class DecisionTransformer01(TrajectoryModel01):
         # get predictions
         # predict next state given state and action
         state_preds = self.predict_state(x[:, 0]) # jesnk: must check the index of [:, 0] is correct
- 
+        # state_preds.shape: batch, seq_length, state_dim
         return state_preds
 
     def get_predictions(
-        self, states, actions, rewards, returns_to_go, timesteps, num_envs=1, **kwargs
+        self, states, timesteps, num_envs=1, **kwargs
     ):
         # we don't care about the past rewards in this model
         # tensor shape: batch_size, seq_length, variable_dim
@@ -338,9 +338,8 @@ class DecisionTransformer01(TrajectoryModel01):
         else:
             padding_mask = None
 
-        state_preds, action_preds, return_preds = self.forward(
+        state_preds = self.forward(
             states,
-            actions,
             timesteps,
             ordering,
             padding_mask=padding_mask,
@@ -354,7 +353,7 @@ class DecisionTransformer01(TrajectoryModel01):
             )
 
     def clamp_state(self, state):
-        return state.clamp(*self.action_range)
+        return state.clamp(*self.state_range)
 
 
 
