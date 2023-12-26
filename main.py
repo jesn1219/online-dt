@@ -80,14 +80,17 @@ class Experiment:
             self.offline_trajs, self.state_mean, self.state_std = self._load_dataset_01(
                 variant["env"]
             )
-            self.state_range = [0, 10.0]
+            self.state_range = [-5, 5]
             self.replay_buffer = ReplayBuffer01(variant["replay_size"], self.offline_trajs)
 
 
         self.aug_trajs = []
 
         self.device = variant.get("device", "cuda")
-        self.target_entropy = -self.act_dim
+        if not ("model:01" in variant["tags"]) :
+            self.target_entropy = -self.act_dim
+        else :
+            self.target_entropy = -self.state_dim
         
         
         if not ("model:01" in variant["tags"]) :

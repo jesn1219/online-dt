@@ -313,7 +313,8 @@ class DecisionTransformer01(TrajectoryModel01):
                 ],
                 dim=1,
             ).to(dtype=torch.float32)
-
+            print(f'state test: {states}')
+            
             timesteps = torch.cat(
                 [
                     torch.zeros(
@@ -346,7 +347,7 @@ class DecisionTransformer01(TrajectoryModel01):
             **kwargs
         )
         if self.stochastic_policy:
-            return state_preds[:, -1]
+            return state_preds
         else:
             return (
                 self.clamp_state(state_preds[:, -1])
