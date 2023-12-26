@@ -14,7 +14,7 @@ import argparse
 import pickle
 import random
 import time
-import gym
+#import gym
 import d4rl
 import torch
 import numpy as np
@@ -160,14 +160,28 @@ class Experiment:
         self.logger = Logger(variant)
 
     def _get_env_spec(self, variant):
-        env = gym.make(variant["env"])
-        state_dim = env.observation_space.shape[0]
-        act_dim = env.action_space.shape[0]
-        action_range = [
-            float(env.action_space.low.min()) + 1e-6,
-            float(env.action_space.high.max()) - 1e-6,
-        ]
-        env.close()
+        if 'minari' in variant['tags'] :
+            import gymnasium as gym
+            env_name = variant["env"]
+            print(f'minari env_name : {env_name}')
+            env = gym.make(env_name)
+            state_dim = env.observation_space['observation'].shape[0]
+            act_dim = env.action_space.shape[0]
+            action_range = [
+                float(env.action_space.low.min()) + 1e-6,
+                float(env.action_space.high.max()) - 1e-6,
+            ]
+            env.close()
+        else :
+            import gym
+            env = gym.make(variant["env"])
+            state_dim = env.observation_space.shape[0]
+            act_dim = env.action_space.shape[0]
+            action_range = [
+                float(env.action_space.low.min()) + 1e-6,
+                float(env.action_space.high.max()) - 1e-6,
+            ]
+            env.close()
         return state_dim, act_dim, action_range
 
     def _save_model(self, path_prefix, is_pretrain_model=False):
@@ -213,6 +227,9 @@ class Experiment:
             print(f"Model loaded at {path_prefix}/model.pt")
 
     def _load_dataset(self, env_name):
+        if 'minari' in self.variant['tags'] :
+            trajectories, state_mean, state_std = self._load_dataset_minari(env_name)
+            return trajectories, state_mean, state_std
 
         dataset_path = f"./data/{env_name}.pkl"
         with open(dataset_path, "rb") as f:
@@ -252,7 +269,57 @@ class Experiment:
 
         return trajectories, state_mean, state_std
     
+    def _load_dataset_minari(self, env_name): # jensk
+        import minari
+        if env_name == 'PointMaze_UMaze-v3' :
+            env_name = 'pointmaze-umaze-v1'
+        dataset = minari.load_dataset(env_name)
+        trajectories = dataset._data.get_episodes(dataset.episode_indices)
+        states, traj_lens, returns = [], [], []
+        if 'pointmaze' in env_name :
+            # re-label observation. (achieved_goal, desired_goal) -> observation
+            print("re-label observation. (achieved_goal, desired_goal) -> observation")
+            for path in trajectories :
+                achieved_goal = path['observations']['achieved_goal'][1:]
+                desired_goal = path['observations']['desired_goal'][1:]
+                observation = np.concatenate([achieved_goal, desired_goal], axis=1)
+                path['observations'] = observation
+
+        for path in trajectories:
+            states.append(path["observations"])
+            traj_lens.append(len(path["observations"]))
+            returns.append(path["rewards"].sum())
+            # for pointmaze
+        traj_lens, returns = np.array(traj_lens), np.array(returns)
+        states = np.concatenate(states, axis=0)
+        state_mean, state_std = np.mean(states, axis=0), np.std(states, axis=0) + 1e-6
+        num_timesteps = sum(traj_lens)
+
+        print("=" * 50)
+        print(f"Starting new experiment: {env_name}")
+        print(f"{len(traj_lens)} trajectories, {num_timesteps} timesteps found")
+        print(f"Average return: {np.mean(returns):.2f}, std: {np.std(returns):.2f}")
+        print(f"Max return: {np.max(returns):.2f}, min: {np.min(returns):.2f}")
+        print(f"Average length: {np.mean(traj_lens):.2f}, std: {np.std(traj_lens):.2f}")
+        print(f"Max length: {np.max(traj_lens):.2f}, min: {np.min(traj_lens):.2f}")
+        print("=" * 50)
+
+        sorted_inds = np.argsort(returns)  # lowest to highest
+        num_trajectories = 1
+        timesteps = traj_lens[sorted_inds[-1]]
+        ind = len(trajectories) - 2
+        while ind >= 0 and timesteps + traj_lens[sorted_inds[ind]] < num_timesteps:
+            timesteps += traj_lens[sorted_inds[ind]]
+            num_trajectories += 1
+            ind -= 1
+        sorted_inds = sorted_inds[-num_trajectories:]
+
+        trajectories = [trajectories[ii] for ii in sorted_inds]
+        return trajectories, state_mean, state_std
+            
+    
     def _load_dataset_01(self,env_name) :
+
         offline_trajs, state_mean, state_std = self._load_dataset(env_name)
         # create ['K'] length trajectories with initial state and final state
         offline_trajs_01 = []
@@ -265,11 +332,19 @@ class Experiment:
             #print(f"traj len: {traj_len}, index : {index}")
             # get the state and action of the index
             # get the initial action and final action
+            if 'terminations' in traj.keys() :
+                traj['terminals'] = traj['terminations']
+                del traj['terminations']
+                print("terminations -> terminals")
+            
             for key in traj.keys() :
+                if key in ['id', 'total_timesteps', 'seed' ] :
+                    continue
                 traj[key] = traj[key][index]
             offline_trajs_01.append(traj)
+        print(f"offline_trajs_01 : {len(offline_trajs_01)}")
         return offline_trajs_01, state_mean, state_std
-            
+                
             
             
             
@@ -563,22 +638,32 @@ class Experiment:
         def get_env_builder(seed, env_name, target_goal=None):
             def make_env_fn():
                 import d4rl
+                if not 'minari' in self.variant['tags'] :
+                    env = gym.make(env_name)
+                    env.seed(seed)
+                    if hasattr(env.env, "wrapped_env"):
+                        env.env.wrapped_env.seed(seed)
+                    elif hasattr(env.env, "seed"):
+                        env.env.seed(seed)
+                    else:
+                        pass
+                    env.action_space.seed(seed)
+                    env.observation_space.seed(seed)
 
-                env = gym.make(env_name)
-                env.seed(seed)
-                if hasattr(env.env, "wrapped_env"):
-                    env.env.wrapped_env.seed(seed)
-                elif hasattr(env.env, "seed"):
-                    env.env.seed(seed)
-                else:
-                    pass
-                env.action_space.seed(seed)
-                env.observation_space.seed(seed)
+                    if target_goal:
+                        env.set_target_goal(target_goal)
+                        print(f"Set the target goal to be {env.target_goal}")
+                    return env
+                else :
+                    env = gym.make(env_name)
 
-                if target_goal:
-                    env.set_target_goal(target_goal)
-                    print(f"Set the target goal to be {env.target_goal}")
-                return env
+                    env.action_space.seed(seed)
+                    env.observation_space.seed(seed)
+
+                    if target_goal:
+                        env.set_target_goal(target_goal)
+                        print(f"Set the target goal to be {env.target_goal}")
+                    return env
 
             return make_env_fn
 
@@ -673,7 +758,10 @@ if __name__ == "__main__":
     parser.add_argument("--tags", type=str, default="model:01")
 
     args = parser.parse_args()
-
+    if 'minari' in args.tags :
+        import gymnasium as gym
+    else :
+        import gym
 
 
 

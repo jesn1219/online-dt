@@ -284,6 +284,7 @@ def sample_trajs(trajectories, sample_size):
 
     traj_lens = np.array([len(traj["observations"]) for traj in trajectories])
     p_sample = traj_lens / np.sum(traj_lens)
+    print(traj_lens, p_sample)
 
     inds = np.random.choice(
         np.arange(len(trajectories)),
