@@ -159,6 +159,8 @@ class DecisionTransformer01(TrajectoryModel01):
         stochastic_policy=False,
         init_temperature=0.1,
         target_entropy=None,
+        state_mean=None, #jesnk
+        state_std=None, #jesnk
         **kwargs
     ):
         super().__init__(state_dim, max_length=max_length)
@@ -194,6 +196,8 @@ class DecisionTransformer01(TrajectoryModel01):
         self.eval_context_length = eval_context_length
         self.ordering = ordering
         self.state_range = state_range
+        self.state_mean = state_mean # jesnk
+        self.state_std = state_std # jesnk
 
         if stochastic_policy:
             self.log_temperature = torch.tensor(np.log(init_temperature))
@@ -313,7 +317,6 @@ class DecisionTransformer01(TrajectoryModel01):
                 ],
                 dim=1,
             ).to(dtype=torch.float32)
-            print(f'state test: {states}')
             
             timesteps = torch.cat(
                 [

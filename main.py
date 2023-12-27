@@ -80,7 +80,20 @@ class Experiment:
             self.offline_trajs, self.state_mean, self.state_std = self._load_dataset_01(
                 variant["env"]
             )
-            self.state_range = [-5, 5]
+            # if some string "s_range*" is in variant['tags'], then set state_range
+            # Setting state_range
+            for tag in variant['tags'].split(',') :
+                print(f"checking tag : {tag}")
+                if 's_range' in tag :
+                    value = tag[7:]
+                    print("tag value: ", value)
+                    value_min, value_max = value.split(':')
+                    self.state_range = [float(value_min), float(value_max)]
+                    print(f"state_range : {self.state_range}")
+                    break
+            # if state_range is not set, then set state_range to [-5, 5]
+            if not hasattr(self, 'state_range') :
+                self.state_range = [-5, 5]
             self.replay_buffer = ReplayBuffer01(variant["replay_size"], self.offline_trajs)
 
 
@@ -134,6 +147,8 @@ class Experiment:
                 ordering=variant["ordering"],
                 init_temperature=variant["init_temperature"],
                 target_entropy=self.target_entropy,
+                state_mean=self.state_mean,
+                state_std=self.state_std,
             ).to(device=self.device)
                 
 
@@ -338,7 +353,6 @@ class Experiment:
             if 'terminations' in traj.keys() :
                 traj['terminals'] = traj['terminations']
                 del traj['terminations']
-                print("terminations -> terminals")
             
             for key in traj.keys() :
                 if key in ['id', 'total_timesteps', 'seed' ] :
