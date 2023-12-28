@@ -95,7 +95,7 @@ class Experiment:
             if not hasattr(self, 'state_range') :
                 self.state_range = [-5, 5]
             self.replay_buffer = ReplayBuffer01(variant["replay_size"], self.offline_trajs)
-
+        print(f'jesnk: debug: state_mean:{self.state_mean}, state_std:{self.state_std}')
 
         self.aug_trajs = []
 
@@ -147,8 +147,8 @@ class Experiment:
                 ordering=variant["ordering"],
                 init_temperature=variant["init_temperature"],
                 target_entropy=self.target_entropy,
-                state_mean=self.state_mean,
-                state_std=self.state_std,
+                #state_mean=self.state_mean,
+                #state_std=self.state_std,
             ).to(device=self.device)
                 
 
@@ -343,6 +343,7 @@ class Experiment:
         offline_trajs_01 = []
         for traj in offline_trajs:
             traj_len = len(traj["observations"])
+            print(f"traj len: {traj_len}")
             # divide the trajectory into K length. get index of K length
             if traj_len < self.variant["K"] :
                 continue 
@@ -358,6 +359,7 @@ class Experiment:
                 if key in ['id', 'total_timesteps', 'seed' ] :
                     continue
                 traj[key] = traj[key][index]
+            print(f"{traj['observations']}")
             offline_trajs_01.append(traj)
         print(f"offline_trajs_01 : {len(offline_trajs_01)}")
         return offline_trajs_01, state_mean, state_std
@@ -772,7 +774,7 @@ if __name__ == "__main__":
     parser.add_argument("--exp_name", type=str, default="default")
     
     # add wandb tags
-    parser.add_argument("--tags", type=str, default="model:01")
+    parser.add_argument("--tags", type=str, default="default")
 
     args = parser.parse_args()
     if 'minari' in args.tags :

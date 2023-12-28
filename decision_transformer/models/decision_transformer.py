@@ -196,8 +196,10 @@ class DecisionTransformer01(TrajectoryModel01):
         self.eval_context_length = eval_context_length
         self.ordering = ordering
         self.state_range = state_range
-        self.state_mean = state_mean # jesnk
-        self.state_std = state_std # jesnk
+        #self.state_mean = state_mean # jesnk
+        #self.state_std = state_std # jesnk
+        #print(f'jesnk: debug: DT01: state_mean:{self.state_mean}, state_std:{self.state_std}')
+
 
         if stochastic_policy:
             self.log_temperature = torch.tensor(np.log(init_temperature))

@@ -153,7 +153,7 @@ class TransformSamplingSubTraj01:
 
     def __call__(self, traj):
         si = random.randint(0, traj["rewards"].shape[0] - 1)
-
+        
         # get sequences from dataset
         ss = traj["observations"][si : si + self.max_len].reshape(-1, self.state_dim)
         rr = traj["rewards"][si : si + self.max_len].reshape(-1, 1)
@@ -164,6 +164,8 @@ class TransformSamplingSubTraj01:
 
         # get the total length of a trajectory
         tlen = ss.shape[0]
+        #print(f"tlen : {tlen} \n observation shape : {traj['observations'].shape}\n ss shape : {ss.shape} \n si : {si} \n ss : {ss} \n max_len : {self.max_len} \n")
+
 
         timesteps = np.arange(si, si + tlen)  # .reshape(-1)
         ordering = np.arange(tlen)
@@ -183,7 +185,14 @@ class TransformSamplingSubTraj01:
             raise ValueError
 
         ss = np.concatenate([np.zeros((self.max_len - tlen, self.state_dim)), ss])
-        ss = (ss - self.state_mean) / self.state_std
+        #ss = (ss - self.state_mean) / self.state_std
+        # manaul normalization
+        manual_normalization = True
+        if manual_normalization :
+            manual_std = 5
+            ep = 1e-6
+            ss = ss + ep / manual_std
+        # jesnk: do not normalize state?
 
         rr = np.concatenate([np.zeros((self.max_len - tlen, 1)), rr])
         dd = np.concatenate([np.ones((self.max_len - tlen)) * 2, dd])
@@ -238,6 +247,7 @@ def create_dataloader(
     return torch.utils.data.DataLoader(
         subset, batch_size=batch_size, num_workers=num_workers, shuffle=False
     )
+from torch.utils.data import DataLoader 
 
 def create_dataloader_01(
     trajectories,
@@ -284,7 +294,12 @@ def sample_trajs(trajectories, sample_size):
 
     traj_lens = np.array([len(traj["observations"]) for traj in trajectories])
     p_sample = traj_lens / np.sum(traj_lens)
-    print(traj_lens, p_sample)
+
+    for traj in trajectories :
+        if len(traj['observations']) < 5 :
+            print(f"traj len : {len(traj['observations'])}")
+            print(f"traj : {traj['observations']}")
+            assert True
 
     inds = np.random.choice(
         np.arange(len(trajectories)),
@@ -293,3 +308,23 @@ def sample_trajs(trajectories, sample_size):
         p=p_sample,
     )
     return inds
+
+
+
+def sample_trajs01(trajectories, sample_size, max_len):
+    valid_starts = []
+    for i, traj in enumerate(trajectories):
+        length = len(traj["observations"])
+        if length >= max_len:
+            valid_starts.extend([(i, start) for start in range(length - max_len + 1)])
+
+    if len(valid_starts) < sample_size:
+        raise ValueError("Insufficient data to sample the requested number of trajectories")
+
+    sampled_starts = np.random.choice(len(valid_starts), size=sample_size, replace=True)
+    sampled_inds = [valid_starts[i] for i in sampled_starts]
+
+    return sampled_inds
+
+# Example usage:
+# inds = sample_trajs(trajectories, sample_size, max_len)

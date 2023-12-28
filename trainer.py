@@ -21,7 +21,7 @@ class SequenceTrainer:
         scheduler=None,
         device="cuda",
     ):
-        self.model = model
+        self.model:DecisionTransformer = model
         self.optimizer = optimizer
         self.log_temperature_optimizer = log_temperature_optimizer
         self.scheduler = scheduler
@@ -146,7 +146,9 @@ class SequenceTrainer:
         padding_mask = padding_mask.to(self.device)
 
         action_target = torch.clone(actions)
-
+        print(f"padding_mask:{padding_mask[0]}")
+        print(f"timesetps:{timesteps[0]}")
+        print(f"ordering:{ordering[0]}")
         _, action_preds, _ = self.model.forward(
             states,
             actions,
@@ -157,6 +159,8 @@ class SequenceTrainer:
             padding_mask=padding_mask,
         )
 
+        print(f"action_pred:{action_preds.mean[0]}")
+        print(f"action_target:{action_target[0]}")
         loss, nll, entropy = loss_fn(
             action_preds,  # a_hat_dist
             action_target,
@@ -203,7 +207,10 @@ class SequenceTrainer:
         timesteps = timesteps.to(self.device)
         ordering = ordering.to(self.device)
         padding_mask = padding_mask.to(self.device)
-
+        #print(f"training_input {states[0]}")
+        #print(f"padding_mask:{padding_mask[0]}")
+        #print(f"timesetps:{timesteps[0]}")
+        #print(f"ordering:{ordering[0]}")
         state_target = torch.clone(states)
 
         states_preds = self.model.forward(
@@ -219,6 +226,8 @@ class SequenceTrainer:
             padding_mask,
             self.model.temperature().detach(),  # no gradient taken here
         )
+        #print(f"state_target : {state_target[0]}")
+        #print(f"state_preds : {states_preds.mean[0]}")
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.25)
