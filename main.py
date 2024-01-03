@@ -340,6 +340,8 @@ class Experiment:
 
         offline_trajs, state_mean, state_std = self._load_dataset(env_name)
         # create ['K'] length trajectories with initial state and final state
+        
+        #return offline_trajs, state_mean, state_std
         offline_trajs_01 = []
         for traj in offline_trajs:
             traj_len = len(traj["observations"])
@@ -674,6 +676,7 @@ class Experiment:
                         print(f"Set the target goal to be {env.target_goal}")
                     return env
                 else :
+                    import gymnasium as gym
                     env = gym.make(env_name)
 
                     env.action_space.seed(seed)

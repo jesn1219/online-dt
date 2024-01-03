@@ -53,13 +53,15 @@ class SequenceTrainer:
             nlls.append(nll)
             entropies.append(entropy)
             # jesnk : assume that one loop is one episode
-            wandb.log({"pretrain/training/loss": loss, \
-                       "pretrain/training/nll": nll, \
-                        "pretrain/training/entropies": entropy, \
-                            "pretrain/training/episode" : _, \
-                                "pretrain/training/temperatures" : self.model.temperature().detach().cpu().item()})
+            # check if wandb.init() is called
+            if wandb.run is not None:
+                wandb.log({"pretrain/training/loss": loss, \
+                        "pretrain/training/nll": nll, \
+                            "pretrain/training/entropies": entropy, \
+                                "pretrain/training/episode" : _, \
+                                    "pretrain/training/temperatures" : self.model.temperature().detach().cpu().item()})
 
-            
+                
 
         logs["pretrain/time/training"] = time.time() - train_start
         logs["pretrain/training/train_loss_mean"] = np.mean(losses)
@@ -105,12 +107,13 @@ class SequenceTrainer:
             losses.append(loss)
             nlls.append(nll)
             entropies.append(entropy)
-            wandb.log({logging_prefix + "loss": loss, \
-                       logging_prefix + "nll": nll, \
-                        logging_prefix + "entropies": entropy, \
-                            logging_prefix + "episode" : start_episode_num + _, \
-                                logging_prefix + "temperature" : self.model.temperature().detach().cpu().item()}
-            )
+            if wandb.run is not None:
+                wandb.log({logging_prefix + "loss": loss, \
+                        logging_prefix + "nll": nll, \
+                            logging_prefix + "entropies": entropy, \
+                                logging_prefix + "episode" : start_episode_num + _, \
+                                    logging_prefix + "temperature" : self.model.temperature().detach().cpu().item()}
+                )
 
         logs["ot/time/training"] = time.time() - train_start
         logs["ot/training/train_loss_mean"] = np.mean(losses)

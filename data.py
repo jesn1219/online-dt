@@ -77,7 +77,9 @@ class TransformSamplingSubTraj:
         rr = traj["rewards"][si : si + self.max_len].reshape(-1, 1)
         if "terminals" in traj:
             dd = traj["terminals"][si : si + self.max_len]  # .reshape(-1)
-        else:
+        elif "terminations" in traj:
+            dd = traj["terminations"][si : si + self.max_len]  # .reshape(-1)
+        else :
             dd = traj["dones"][si : si + self.max_len]  # .reshape(-1)
 
         # get the total length of a trajectory
@@ -157,9 +159,12 @@ class TransformSamplingSubTraj01:
         # get sequences from dataset
         ss = traj["observations"][si : si + self.max_len].reshape(-1, self.state_dim)
         rr = traj["rewards"][si : si + self.max_len].reshape(-1, 1)
+
         if "terminals" in traj:
             dd = traj["terminals"][si : si + self.max_len]  # .reshape(-1)
-        else:
+        elif "terminations" in traj:
+            dd = traj["terminations"][si : si + self.max_len]  # .reshape(-1)
+        else :
             dd = traj["dones"][si : si + self.max_len]  # .reshape(-1)
 
         # get the total length of a trajectory
@@ -189,8 +194,8 @@ class TransformSamplingSubTraj01:
         # manaul normalization
         manual_normalization = True
         if manual_normalization :
-            manual_std = 5
-            ep = 1e-6
+            manual_std = 2
+            ep = 1e-7
             ss = ss + ep / manual_std
         # jesnk: do not normalize state?
 
@@ -200,6 +205,9 @@ class TransformSamplingSubTraj01:
             np.concatenate([np.zeros((self.max_len - tlen, 1)), rtg])
             * self.reward_scale
         )
+        
+        print(f'{(rtg.shape[0] + self.max_len - tlen)} == {self.max_len})')
+
         timesteps = np.concatenate([np.zeros((self.max_len - tlen)), timesteps])
         ordering = np.concatenate([np.zeros((self.max_len - tlen)), ordering])
         padding_mask = np.concatenate([np.zeros(self.max_len - tlen), np.ones(tlen)])
@@ -263,7 +271,7 @@ def create_dataloader_01(
 ):
     # total number of subt-rajectories you need to sample
     sample_size = batch_size * num_iters
-    sampling_ind = sample_trajs(trajectories, sample_size)
+    sampling_ind = sample_trajs01(trajectories, sample_size)
 
     transform = TransformSamplingSubTraj01(
         max_len=max_len,
@@ -295,12 +303,6 @@ def sample_trajs(trajectories, sample_size):
     traj_lens = np.array([len(traj["observations"]) for traj in trajectories])
     p_sample = traj_lens / np.sum(traj_lens)
 
-    for traj in trajectories :
-        if len(traj['observations']) < 5 :
-            print(f"traj len : {len(traj['observations'])}")
-            print(f"traj : {traj['observations']}")
-            assert True
-
     inds = np.random.choice(
         np.arange(len(trajectories)),
         size=sample_size,
@@ -311,20 +313,23 @@ def sample_trajs(trajectories, sample_size):
 
 
 
-def sample_trajs01(trajectories, sample_size, max_len):
-    valid_starts = []
-    for i, traj in enumerate(trajectories):
-        length = len(traj["observations"])
-        if length >= max_len:
-            valid_starts.extend([(i, start) for start in range(length - max_len + 1)])
+def sample_trajs01(trajectories, sample_size):
 
-    if len(valid_starts) < sample_size:
-        raise ValueError("Insufficient data to sample the requested number of trajectories")
+    traj_lens = np.array([len(traj["observations"]) for traj in trajectories])
+    p_sample = traj_lens / np.sum(traj_lens)
 
-    sampled_starts = np.random.choice(len(valid_starts), size=sample_size, replace=True)
-    sampled_inds = [valid_starts[i] for i in sampled_starts]
-
-    return sampled_inds
-
-# Example usage:
-# inds = sample_trajs(trajectories, sample_size, max_len)
+    for idx, traj in enumerate(trajectories) :
+        if len(traj['observations']) < 5 :
+            # set p to 0
+            p_sample[idx] = 0
+    # set sum(p_sample) to 1
+    p_sample = p_sample / np.sum(p_sample)
+    
+    
+    inds = np.random.choice(
+        np.arange(len(trajectories)),
+        size=sample_size,
+        replace=True,
+        p=p_sample,
+    )
+    return inds
