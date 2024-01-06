@@ -206,7 +206,7 @@ class TransformSamplingSubTraj01:
             * self.reward_scale
         )
         
-        print(f'{(rtg.shape[0] + self.max_len - tlen)} == {self.max_len})')
+        #print(f'{(rtg.shape[0] + self.max_len - tlen)} == {self.max_len})')
 
         timesteps = np.concatenate([np.zeros((self.max_len - tlen)), timesteps])
         ordering = np.concatenate([np.zeros((self.max_len - tlen)), ordering])
