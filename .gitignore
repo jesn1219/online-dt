@@ -1,4 +1,6 @@
 wandb/
+exp/
+0_gpt_trained_model/
 
 .ipynb_checkpoints
 .DS_Store

@@ -172,6 +172,8 @@ class Attention(nn.Module):
 
         if attention_mask is not None:
             # Apply the attention mask
+            # jesnk: check device and dtype
+            attention_mask = attention_mask.to(dtype=w.dtype, device=w.device)
             w = w + attention_mask
 
         w = nn.Softmax(dim=-1)(w)
