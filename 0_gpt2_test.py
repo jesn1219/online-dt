@@ -118,6 +118,7 @@ class DiagGaussianActor(nn.Module):
 
     def forward(self, obs):
         mu, log_std = self.mu(obs), self.log_std(obs)
+        print(mu.shape, log_std.shape)
         log_std = torch.tanh(log_std)
         # log_std is the output of tanh so it will be between [-1, 1]
         # map it to be between [log_std_min, log_std_max]
@@ -128,7 +129,7 @@ class DiagGaussianActor(nn.Module):
 
 
 from decision_transformer.models.model import TrajectoryModel01
-class DecisionTransformer01(TrajectoryModel01):
+class DecisionTransformer02(TrajectoryModel01):
 
     """
     This model uses GPT to model (Return_1, state_1, action_1, Return_2, state_2, ...)
@@ -263,9 +264,12 @@ class DecisionTransformer01(TrajectoryModel01):
         # after reshape : batch, 1, seq_length, hidden_size
         # get predictions
         # predict next state given state and action
-        state_preds = self.predict_state(x[:, 0]) # jesnk: must check the index of [:, 0] is correct
+
+        #state_preds = self.predict_state(x[:, 0]) # jesnk: DT1 setting
+        states_pred = self.predict_state(x[:,0]) # jesnk: must check the index of [:, 0] is correct
+
         # state_preds.shape: batch, seq_length, state_dim
-        return state_preds
+        return states_pred
 
     def get_predictions(
         self, states, timesteps, num_envs=1, **kwargs
@@ -435,14 +439,14 @@ variant["state_dim"] = 1
 variant["state_range"] = np.array([-1.0, 1.0])
 variant["K"] = 5
 MAX_EPISODE_LEN = 1000
-variant["embed_dim"] = 1024
+variant["embed_dim"] = 512
 variant["n_layer"] = 4
 variant["n_head"] = 4
 variant["activation_function"] = "gelu"
 variant["dropout"] = 0.1
 variant["ordering"] = 0
 variant["init_temperature"] = 0.1
-variant["target_entropy"] = -variant["state_dim"] * 4
+variant["target_entropy"] = -variant["state_dim"]
 variant["eval_context_length"] = 5
 variant["warmup_steps"] = 1000
 variant["learning_rate"] = 1e-4
@@ -450,8 +454,9 @@ variant["weight_decay"] = 5e-4
 variant["dataset_num_squence"] = num_sequences
 variant["dataset_seq_length"] = seq_data_length
 variant["train_total_epoch"] = total_epoch
+variant["stocastic_policy"] = False
 
-model = DecisionTransformer01(
+model = DecisionTransformer02(
     state_dim=variant["state_dim"],
     state_range= variant["state_range"],
     max_length=variant["K"],
@@ -465,7 +470,7 @@ model = DecisionTransformer01(
     n_positions=1024,
     resid_pdrop=variant["dropout"],
     attn_pdrop=variant["dropout"],
-    stochastic_policy=True,
+    stochastic_policy=variant["stocastic_policy"],
     ordering=variant["ordering"],
     init_temperature=variant["init_temperature"],
     target_entropy=variant["target_entropy"],
@@ -545,6 +550,7 @@ def train_step_stochastic_01(self, loss_fn, trajs):
 
 import time
 from lamb import Lamb
+import wandb
 
 # 데이터 로더 설정
 batch_size = 1024
@@ -552,7 +558,7 @@ batch_size = 1024
 train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 # 손실 함수와 옵티마이저
-def loss_fn(
+def loss_fn_stocastic(
     s_hat_dist,
     s,
     attention_mask,
@@ -569,6 +575,19 @@ def loss_fn(
         -log_likelihood,
         entropy,
     )
+    
+def loss_fn_deterministic(
+    s_hat,
+    s,
+    attention_mask
+):
+    # MSE LOSS with attention_mask > 0
+    s_hat = s_hat
+    s = s
+    #print(s_hat.shape, s.shape)
+    loss = torch.mean((s_hat - s)**2)
+    return loss
+
 
 optimizer = Lamb(
             model.parameters(),
@@ -580,11 +599,6 @@ scheduler = torch.optim.lr_scheduler.LambdaLR(
             optimizer, lambda steps: min((steps + 1) / variant["warmup_steps"], 1)
 )
 
-log_temperature_optimizer = torch.optim.Adam(
-            [model.log_temperature],
-            lr=1e-4,
-            betas=[0.9, 0.999],
-)
 
 # 학습 루프
 def train(model, train_loader, loss_fn, optimizer, scheduler, epochs=10, log_dir='./0_gpt_trained_model/'):
@@ -598,6 +612,14 @@ def train(model, train_loader, loss_fn, optimizer, scheduler, epochs=10, log_dir
     lr = variant["learning_rate"]
     gamma = variant["weight_decay"]
     total_epoch = variant["train_total_epoch"]
+    stocastic_policy = variant["stocastic_policy"]
+    
+    if stocastic_policy:
+        log_temperature_optimizer = torch.optim.Adam(
+            [model.log_temperature],
+            lr=1e-4,
+            betas=[0.9, 0.999],
+        )
     
     model_name = f"DT_ed{embed_dim}_nh{num_heads}_nl{num_layers}_sdl{seq_data_length}_ns{num_sequences}_lr{lr}_g{gamma}_epoch{total_epoch}_{timestamp}"
     log_dir = log_dir + f"{model_name}/"
@@ -625,20 +647,27 @@ def train(model, train_loader, loss_fn, optimizer, scheduler, epochs=10, log_dir
             
             padding_mask = torch.ones((inputs.shape[0], seq_length), dtype=torch.long)
             
-            loss, nll, entropy = loss_fn(outputs, targets.unsqueeze(-1),attention_mask=padding_mask,entropy_reg=model.temperature().detach())
+            if stocastic_policy:
+                loss, nll, entropy = loss_fn(outputs, targets.unsqueeze(-1),attention_mask=padding_mask,entropy_reg=model.temperature().detach())
+            else :
+                loss = loss_fn(outputs, targets.unsqueeze(-1),attention_mask=padding_mask)
+                
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
             optimizer.step()
             
-            log_temperature_optimizer.zero_grad()
-            temperature_loss = (
-                model.temperature() * (entropy - model.target_entropy).detach()
-            )
-            temperature_loss.backward()
-            log_temperature_optimizer.step()
-
-            output_sample = outputs.mean
+            if stocastic_policy:
+                log_temperature_optimizer.zero_grad()
+                temperature_loss = (
+                    model.temperature() * (entropy - model.target_entropy).detach()
+                )
+                temperature_loss.backward()
+                log_temperature_optimizer.step()
+            if stocastic_policy:
+                output_sample = outputs.mean
+            else :
+                output_sample = outputs
             token_error = torch.abs(targets.detach() - output_sample.detach().reshape(targets.shape)).mean()
             total_token_error.append(token_error.cpu())
 
@@ -668,7 +697,8 @@ def train(model, train_loader, loss_fn, optimizer, scheduler, epochs=10, log_dir
                 }
             )
         print(f"Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.7f}, token error : {epoch_token_error}Time: {epoch_end_time - epoch_start_time:.4f}s")
-        print(f"entropy : {entropy}, temperature : {model.temperature()}")
+        if stocastic_policy:
+            print(f"entropy : {entropy}, temperature : {model.temperature()}")
         if epoch % 10 == 0:
             model_name = f"gpt2_ed{embed_dim}_nh{num_heads}_nl{num_layers}_sdl{seq_data_length}_ns{num_sequences}_lr{lr}_g{gamma}_epoch{total_epoch}_tte{epoch_token_error}_ep{epoch}.pt"
             pass
@@ -684,14 +714,14 @@ current_time = get_current_time()
 
 wandb_enable = True
 if wandb_enable :
-    import wandb
-    wandb.init(project="GPT_exp", entity="jesnk", name=f"DT01_{current_time}")
+    wandb.init(project="GPT_exp", entity="jesnk", name=f"DT02_DET_{current_time}")
     wandb.config.update(variant)
     wandb.watch(model)
 
 
 model.to(device)
 
+loss_fn = loss_fn_stocastic if variant["stocastic_policy"] else loss_fn_deterministic
 last_epoch_token_error = train(model, train_loader, loss_fn, optimizer, scheduler, epochs=total_epoch)
 last_epoch_token_error = str(round(last_epoch_token_error, 9))
 
