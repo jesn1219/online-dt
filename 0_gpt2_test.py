@@ -404,7 +404,7 @@ class SequenceDataset(Dataset):
         sequence = self.sequences[idx]
         input_seq = sequence[:-1]  # 입력 시퀀스 (마지막 토큰 제외)
         target_seq = sequence[1:]  # 타겟 시퀀스 (첫 번째 토큰 제외)
-        return torch.tensor(input_seq, dtype=torch.float), torch.tensor(target_seq, dtype=torch.float)
+        return input_seq.clone().detach(), target_seq.clone().detach()
 
 
 seq_data_length = 5  # 시퀀스 데이터 길이
