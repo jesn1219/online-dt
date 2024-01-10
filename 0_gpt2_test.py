@@ -419,7 +419,7 @@ num_sequences = 500000  # 시퀀스 데이터 개수
 #batch_size = 1
 #lr = 1e-6
 
-total_epoch = 100
+total_epoch = 1000
 
 # 시퀀스 데이터 생성 및 데이터셋 객체 생성
 sequences = create_sequences(seq_length=seq_data_length, num_sequences=num_sequences)
@@ -551,6 +551,7 @@ def train_step_stochastic_01(self, loss_fn, trajs):
 import time
 from lamb import Lamb
 import wandb
+from jesnk_utils.utils import get_current_time
 
 # 데이터 로더 설정
 batch_size = 1024
@@ -603,7 +604,7 @@ scheduler = torch.optim.lr_scheduler.LambdaLR(
 # 학습 루프
 def train(model, train_loader, loss_fn, optimizer, scheduler, epochs=10, log_dir='./0_gpt_trained_model/'):
     model.train()
-    timestamp = time.strftime('%Y%m%d%H%M%S', time.localtime())
+    timestamp = get_current_time()
     embed_dim = variant["embed_dim"]
     num_heads = variant["n_head"]
     num_layers = variant["n_layer"]
@@ -621,7 +622,7 @@ def train(model, train_loader, loss_fn, optimizer, scheduler, epochs=10, log_dir
             betas=[0.9, 0.999],
         )
     
-    model_name = f"DT_ed{embed_dim}_nh{num_heads}_nl{num_layers}_sdl{seq_data_length}_ns{num_sequences}_lr{lr}_g{gamma}_epoch{total_epoch}_{timestamp}"
+    model_name = f"{timestamp}_DT_ed{embed_dim}_nh{num_heads}_nl{num_layers}_sdl{seq_data_length}_ns{num_sequences}_lr{lr}_g{gamma}_epoch{total_epoch}"
     log_dir = log_dir + f"{model_name}/"
     try:
         os.mkdir(log_dir)
@@ -673,14 +674,22 @@ def train(model, train_loader, loss_fn, optimizer, scheduler, epochs=10, log_dir
 
             total_loss += loss.item()
             if wandb.run is not None:
-                wandb.log(
-                    {
-                        "loss": loss.item(),
-                        "nll": nll.item(),
-                        "entropy": entropy.item(),
-                        "token_error": token_error.item(),
-                        "temperature": model.temperature().item(),
-                    }
+                if variant['stocastic_policy'] :
+                    wandb.log(
+                        {
+                            "loss": loss.item(),
+                            "nll": nll.item(),
+                            "entropy": entropy.item(),
+                            "token_error": token_error.item(),
+                            "temperature": model.temperature().item(),
+                        }
+                    )
+                else :                        
+                    wandb.log(
+                        {
+                            "loss": loss.item(),
+                            "token_error": token_error.item(),
+                        }
                 )
         scheduler.step()
         epoch_end_time = time.time()
@@ -708,7 +717,6 @@ def train(model, train_loader, loss_fn, optimizer, scheduler, epochs=10, log_dir
     print(f"Total Learning time : {end_time - start_time:.4f}s")
     return epoch_token_error
 
-from jesnk_utils.utils import get_current_time
 
 current_time = get_current_time()
 
@@ -724,6 +732,12 @@ model.to(device)
 loss_fn = loss_fn_stocastic if variant["stocastic_policy"] else loss_fn_deterministic
 last_epoch_token_error = train(model, train_loader, loss_fn, optimizer, scheduler, epochs=total_epoch)
 last_epoch_token_error = str(round(last_epoch_token_error, 9))
+
+
+# In[ ]:
+
+
+wandb.run.name
 
 
 # In[ ]:
