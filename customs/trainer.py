@@ -171,7 +171,15 @@ def train(model, variant, train_loader, loss_fn, optimizer, scheduler, log_dir='
     return epoch_token_error
 
 
-
+def evaluation(model, test_loader, variant) :
+    model.eval()
+    total_token_error = []
+    for inputs, targets in test_loader:
+        outputs = model(inputs.unsqueeze(-1))
+        token_error = torch.abs(targets.detach() - outputs.detach().reshape(targets.shape)).mean()
+        total_token_error.append(token_error.cpu())
+    epoch_token_error = np.mean(total_token_error)
+    return epoch_token_error
 
 
 def train_step_stochastic_01(self, loss_fn, trajs):
