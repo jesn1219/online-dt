@@ -19,7 +19,7 @@ from torch.utils.data import Dataset, DataLoader
 variant = {}
 variant["state_dim"] = 1
 variant["state_range"] = np.array([-1.0, 1.0])
-variant["K"] = 4
+variant["K"] = 5
 MAX_EPISODE_LEN = 1000
 variant["embed_dim"] = 512
 variant["n_layer"] = 4
@@ -33,28 +33,33 @@ variant["eval_context_length"] = 5
 variant["warmup_steps"] = 1000
 variant["learning_rate"] = 1e-4
 variant["weight_decay"] = 5e-4
+
+variant["seq_masking"] = "10001"
+
+variant["dataset_num_squence"] = 500000
+variant["dataset_seq_length"] = 5
+variant["model_seq_length"] = 5 
+variant["train_total_epoch"] = 1000
+variant["seq_type"] = 2
+variant['value_masking'] = True
+
 variant["stocastic_policy"] = False
 variant["telebot"] = False
-
-variant["dataset_num_squence"] = 1000
-variant["dataset_seq_length"] = 5
-variant["model_seq_length"] = 5 - 1
-variant["train_total_epoch"] = 20
 
 
 # In[3]:
 
 
 # 시퀀스 데이터 생성 및 데이터셋 객체 생성
-train_sequences = create_sequences(seq_length=variant['dataset_seq_length'], num_sequences=variant["dataset_num_squence"], start=-2.0, end=5.0, step=0.01)
-normalized_train_sequences = normalize_data(train_sequences, -2.0, 5.0, -1.0, 1.0)
-denormalized_train_data = denormalize_data(normalized_train_sequences, -2.0, 5.0, -1.0, 1.0)
-dataset = SequenceDataset(train_sequences)
+train_sequences = create_sequences(seq_length=variant['dataset_seq_length'], num_sequences=variant["dataset_num_squence"], start=-1.0, end=1.0, step=0.001)
+#normalized_train_sequences = normalize_data(train_sequences, -2.0, 5.0, -1.0, 1.0)
+#denormalized_train_data = denormalize_data(normalized_train_sequences, -2.0, 5.0, -1.0, 1.0)
+dataset = SequenceDataset(train_sequences, seq_type=variant['seq_type'])
 
 # 데이터셋 예시 출력
 print("시퀀스 데이터 예시:", train_sequences[0])
-print("normalized seq data:", normalized_train_sequences[0])
-print("denormalized seq data:", denormalized_train_data[0])
+#print("normalized seq data:", normalized_train_sequences[0])
+#print("denormalized seq data:", denormalized_train_data[0])
 print("데이터셋 크기:", len(dataset))
 
 
@@ -108,7 +113,7 @@ scheduler = torch.optim.lr_scheduler.LambdaLR(
 
 current_time = get_current_time()
 
-wandb_enable = False
+wandb_enable = True
 telebot_enable = True
 variant['telebot'] = telebot_enable
 if wandb_enable :
@@ -125,13 +130,25 @@ last_epoch_token_error = train(model, variant, train_loader, loss_fn, optimizer,
 # In[ ]:
 
 
-model.load("./gpt2_ed512_nh4_nl4_sdl5_ns500000_lr0.0001_g0.0005_epoch1000_tte1.599798321723938_ep540.pt")
+# get most recent model dir path in './0_gpt_trained_model'
+import os
+import glob
+list_of_dirs = glob.glob('./0_gpt_trained_model/*') # * means all if need specific format then *.csv
+latest_model_dir_path = max(list_of_dirs, key=os.path.getctime)
+print(latest_model_dir_path)
+
+# get most recent model *.pt file in latest_model_dir_path
+list_of_files = glob.glob(latest_model_dir_path+'/*.pt') # * means all if need specific format then *.csv
+latest_model_file_path = max(list_of_files, key=os.path.getctime)
+print(latest_model_file_path)
 
 
 # In[ ]:
 
 
-def test(model, test_loader, stochastic_policy=False):
+model.load(latest_model_file_path)
+
+def test(model, variant, test_loader, stochastic_policy=False):
     model.eval()
     total_loss = 0
     total_token_error = []
@@ -140,8 +157,26 @@ def test(model, test_loader, stochastic_policy=False):
         for _, (inputs, targets) in enumerate(test_loader):
             inputs, targets = inputs.to(device), targets.to(device)
             #print(inputs.shape, targets.shape)
-            outputs = model(inputs.unsqueeze(-1))
-            padding_mask = torch.ones((inputs.shape[0], seq_length), dtype=torch.long)
+            
+            padding_mask = torch.ones((inputs.shape[0], variant["K"]), dtype=torch.long)
+            for i in range(len(variant['seq_masking'])):
+                if variant['seq_masking'][i] == "0":
+                    padding_mask[:, i] = 0
+            print(padding_mask)
+            # set inputs value with 0 where padding_mask is 0
+            print(inputs[0])
+            inputs = (inputs* padding_mask.to(device))
+            print(inputs[0])
+            
+            padding_mask = torch.ones((inputs.shape[0], variant["K"]), dtype=torch.long)
+            for i in range(len(variant['seq_masking'])):
+                if variant['seq_masking'][i] == "0":
+                    padding_mask[:, i] = 0
+                    #print(padding_mask[:, i, :])
+            
+            outputs = model(inputs.unsqueeze(-1), padding_mask=padding_mask)
+            
+            
             print(f"inputs : {inputs[0]}")
             print(f"targets : {targets[0]}")
             print(f"outputs : {outputs[0].detach().cpu().squeeze()}")
@@ -167,14 +202,14 @@ def test(model, test_loader, stochastic_policy=False):
     print(f"count : {count}")
 
 # 테스트 데이터 생성 및 데이터셋 객체 생성
-test_sequences = create_sequences(seq_length=seq_data_length, num_sequences=100000, start= -5.0, end=5.0)  # 예: 200개의 테스트 시퀀스 생성
-test_dataset = SequenceDataset(test_sequences)
+test_sequences = create_sequences(seq_length=variant['dataset_seq_length'], num_sequences=10, start= -1.0, end=1.0, step=0.001)  # 예: 200개의 테스트 시퀀스 생성
+test_dataset = SequenceDataset(test_sequences, seq_type=variant['seq_type'])
 
 # 데이터 로더 설정
-test_loader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
 # 손실 함수와 옵티마이저
 
 # 테스트 실행
-test(model, test_loader)
+test(model, variant, test_loader)
 

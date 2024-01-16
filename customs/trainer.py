@@ -6,6 +6,8 @@ import asyncio
 from jesnk_utils.telebot import Telebot
 import torch
 import numpy as np
+import os
+
 telebot = Telebot()
 
 
@@ -33,11 +35,15 @@ def loss_fn_deterministic(
     s,
     attention_mask
 ):
+    if attention_mask is not None:
+        pass
+    else :
+        attention_mask = torch.ones((s.shape[0], s.shape[1]), dtype=torch.long)
     # MSE LOSS with attention_mask > 0
     s_hat = s_hat
     s = s
     #print(s_hat.shape, s.shape)
-    loss = torch.mean((s_hat - s)**2)
+    loss = torch.mean((s_hat[attention_mask>0] - s[attention_mask>0])**2)
     return loss
 
 
@@ -57,6 +63,7 @@ def train(model, variant, train_loader, loss_fn, optimizer, scheduler, log_dir='
     stocastic_policy = variant["stocastic_policy"]
     telebot_enable = variant["telebot"]
     max_epoch = variant['train_total_epoch']
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     if stocastic_policy:
         log_temperature_optimizer = torch.optim.Adam(
@@ -75,31 +82,45 @@ def train(model, variant, train_loader, loss_fn, optimizer, scheduler, log_dir='
         os.mkdir(log_dir)
     except:
         pass
-
-    import os
-    try:
-        os.mkdir(log_dir)
-    except:
-        pass
     
     start_time = time.time()
     for epoch in range(max_epoch):
         total_token_error = []
         epoch_start_time = time.time()
         total_loss = 0
-        for inputs, targets in train_loader:
+        for inputs, input_mask, targets, targets_mask in train_loader:
 
             optimizer.zero_grad()
 
-            outputs = model(inputs.unsqueeze(-1))
+            if input_mask is not None:
+                pass
+            else :
+                input_mask = torch.ones((inputs.shape[0], variant["K"]), dtype=torch.long)
+            inputs, targets = inputs.to(device), targets.to(device)
             
-            padding_mask = torch.ones((inputs.shape[0], variant["K"]), dtype=torch.long)
+            #padding_mask = torch.ones((inputs.shape[0], variant["K"]), dtype=torch.long)
+            
+            '''
+            for i in range(len(variant['seq_masking'])):
+                if variant['seq_masking'][i] == "0":
+                    padding_mask[:, i] = 0
+            '''
+                    
+            # make input value 0 where padding_mask is 0
+            if variant['value_masking'] :            
+                inputs = (inputs* input_mask.to(device))
+
+            outputs = model(inputs.unsqueeze(-1), padding_mask=input_mask)
+            
             
             if stocastic_policy:
-                loss, nll, entropy = loss_fn(outputs, targets.unsqueeze(-1),attention_mask=padding_mask,entropy_reg=model.temperature().detach())
+                loss, nll, entropy = loss_fn(outputs, targets.unsqueeze(-1),attention_mask=targets_mask,entropy_reg=model.temperature().detach())
             else :
-                loss = loss_fn(outputs, targets.unsqueeze(-1),attention_mask=padding_mask)
-                
+                loss = loss_fn(outputs, targets.unsqueeze(-1), attention_mask=targets_mask)
+            
+            print(f"inputs : {inputs[0].detach().cpu().squeeze()}")
+            print(f"targets : {targets[0].detach().cpu().squeeze()}")
+            print(f"outputs : {outputs[0].detach().cpu().squeeze()}")
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
@@ -157,7 +178,7 @@ def train(model, variant, train_loader, loss_fn, optimizer, scheduler, log_dir='
         print(f"Epoch [{epoch + 1}/{max_epoch}], Loss: {avg_loss:.7f}, token error : {epoch_token_error}Time: {epoch_end_time - epoch_start_time:.4f}s")
         if stocastic_policy:
             print(f"entropy : {entropy}, temperature : {model.temperature()}")
-        if epoch % 10 == 0:
+        if (epoch+1)%10 == 0 :
             model_name = f"gpt2_ed{embed_dim}_nh{num_heads}_nl{num_layers}_sdl{seq_data_length}_ns{num_sequences}_lr{lr}_g{gamma}_epoch{total_epoch}_tte{epoch_token_error}_ep{epoch}.pt"
             model.save(f"{log_dir}{model_name}")
             if telebot_enable:

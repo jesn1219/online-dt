@@ -17,20 +17,66 @@ def create_sequences(seq_length=5, num_sequences=1000, start=-1.0, end=1.0, step
 
 # 데이터셋 클래스
 class SequenceDataset(Dataset):
-    def __init__(self, sequences):
+    def __init__(self, sequences, seq_type=0):
+        # type 0 :
+        # input : sequence[:-1]
+        # target : sequence[1:]
+        
+        # type 1 :
+        # input : sequence[:]
+        # output : sequence[:]
+        # designed for padding mask "10001"
+        
         #self.sequences = sequences
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.sequences = torch.tensor(sequences, dtype=torch.float).to(device)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.sequences = torch.tensor(sequences, dtype=torch.float).to(self.device)
+        self.seq_type = seq_type
+
+    def __getitem__(self, idx) :
+        if self.seq_type == 0 :
+            return self.__getitem__1(idx)
+        elif self.seq_type == 1 :
+            return self.__getitem__2(idx)
+        elif self.seq_type == 2 :
+            return self.__getitem__3(idx)
+        else :
+            raise ValueError("seq_type error")
         
 
     def __len__(self):
         return len(self.sequences)
 
-    def __getitem__(self, idx):
+    def __getitem__1(self, idx):
         sequence = self.sequences[idx]
         input_seq = sequence[:-1]  # 입력 시퀀스 (마지막 토큰 제외)
         target_seq = sequence[1:]  # 타겟 시퀀스 (첫 번째 토큰 제외)
-        return input_seq.clone().detach(), target_seq.clone().detach()
+        input_mask = torch.ones((input_seq.shape[0], 1), dtype=torch.long)
+        target_mask = torch.ones((target_seq.shape[0], 1), dtype=torch.long)
+        return input_seq.clone().detach(), input_mask, target_seq.clone().detach(), target_mask
+    
+    def __getitem__2(self, idx) :
+        sequence = self.sequences[idx]
+        input_seq = sequence[:]  
+        target_seq = sequence[:]
+        input_mask = torch.ones((input_seq.shape[0], 1), dtype=torch.long)
+        target_mask = torch.ones((target_seq.shape[0], 1), dtype=torch.long)
+        return input_seq.clone().detach(), input_mask, target_seq.clone().detach(), target_mask
+
+    def __getitem__3(self,idx) :
+        # input seq length : 5
+        sequence = self.sequences[idx]
+        input_seq_left = torch.zeros((sequence.shape[0] -2 , 1), dtype=torch.float).to(self.device)
+        # input_seq_right : sequence[0] + sequence[-1]
+        input_seq_right = sequence[[0,-1]].unsqueeze(1).to(self.device)
+        #print(input_seq_left.shape, input_seq_right.shape)
+        input_seq = torch.cat((input_seq_left, input_seq_right), dim=0)
+        input_mask = torch.cat((torch.zeros((input_seq_left.shape[0], 1), dtype=torch.long), torch.ones((input_seq_right.shape[0], 1), dtype=torch.long)), dim=0)
+        target_seq = torch.cat((sequence[[0,-1]], sequence[1:-1]), dim=0).unsqueeze(1)
+        target_mask = torch.ones((target_seq.shape[0], 1), dtype=torch.long)
+        #print(target_seq.shape, target_mask.shape)
+
+        return input_seq.clone().detach().to(self.device), input_mask.to(self.device), target_seq.clone().detach().to(self.device), target_mask.to(self.device)
+
 
 def normalize_data(data, original_min, original_max, new_min, new_max):
     """
