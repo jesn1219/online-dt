@@ -40,7 +40,7 @@ variant["dataset_num_squence"] = 500000
 variant["dataset_seq_length"] = 5
 variant["model_seq_length"] = 5 
 variant["train_total_epoch"] = 1000
-variant["seq_type"] = 2
+variant["seq_type"] = 1
 variant['value_masking'] = True
 
 variant["stocastic_policy"] = False
@@ -114,7 +114,7 @@ scheduler = torch.optim.lr_scheduler.LambdaLR(
 current_time = get_current_time()
 
 wandb_enable = True
-telebot_enable = True
+telebot_enable = False
 variant['telebot'] = telebot_enable
 if wandb_enable :
     wandb.init(project="GPT_exp", entity="jesnk", name=f"DT02_DET_{current_time}")

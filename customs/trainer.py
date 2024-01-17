@@ -40,9 +40,6 @@ def loss_fn_deterministic(
     else :
         attention_mask = torch.ones((s.shape[0], s.shape[1]), dtype=torch.long)
     # MSE LOSS with attention_mask > 0
-    s_hat = s_hat
-    s = s
-    #print(s_hat.shape, s.shape)
     loss = torch.mean((s_hat[attention_mask>0] - s[attention_mask>0])**2)
     return loss
 
@@ -107,7 +104,7 @@ def train(model, variant, train_loader, loss_fn, optimizer, scheduler, log_dir='
             '''
                     
             # make input value 0 where padding_mask is 0
-            if variant['value_masking'] :            
+            if variant['value_masking'] :        
                 inputs = (inputs* input_mask.to(device))
 
             outputs = model(inputs.unsqueeze(-1), padding_mask=input_mask)
@@ -121,6 +118,9 @@ def train(model, variant, train_loader, loss_fn, optimizer, scheduler, log_dir='
             print(f"inputs : {inputs[0].detach().cpu().squeeze()}")
             print(f"targets : {targets[0].detach().cpu().squeeze()}")
             print(f"outputs : {outputs[0].detach().cpu().squeeze()}")
+            print(f"input_mask : {input_mask[0].detach().cpu().squeeze()}")
+            print(f"targets_mask : {targets_mask[0].detach().cpu().squeeze()}")
+            print("=====================================")
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)

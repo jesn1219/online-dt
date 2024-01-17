@@ -58,8 +58,9 @@ class SequenceDataset(Dataset):
         sequence = self.sequences[idx]
         input_seq = sequence[:]  
         target_seq = sequence[:]
-        input_mask = torch.ones((input_seq.shape[0], 1), dtype=torch.long)
-        target_mask = torch.ones((target_seq.shape[0], 1), dtype=torch.long)
+        input_mask = torch.zeros((input_seq.shape[0]), dtype=torch.long)
+        input_mask[[0,-1]] = 1
+        target_mask = torch.ones((target_seq.shape[0]), dtype=torch.long)
         return input_seq.clone().detach(), input_mask, target_seq.clone().detach(), target_mask
 
     def __getitem__3(self,idx) :

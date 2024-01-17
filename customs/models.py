@@ -121,7 +121,7 @@ class DecisionTransformer02(TrajectoryModel01):
             .reshape(batch_size, 1 * seq_length, self.hidden_size)
         )
         # stacked_inputs.shape: batch, 1*seq_length, hidden_size
-        stacked_inputs = self.embed_ln(stacked_inputs)
+        stacked_inputs = self.embed_ln(stacked_inputs) #jesnk: layer norm disabled
 
         # to make the attention mask fit the stacked inputs, have to stack it as well
         stacked_padding_mask = (
